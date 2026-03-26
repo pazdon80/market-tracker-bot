@@ -3,55 +3,36 @@ import os
 import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from bs4 import BeautifulSoup
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-BASE_URL = "https://www.funder.co.il/fund/"
+API_URL = "https://www.funder.co.il/wsStock.asmx/GetindicesOn"
 
-def send_telegram_message(text: str):
+def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text
-    }
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
     requests.post(url, json=payload)
 
 def fetch_fund_data(fund_id):
     try:
-        url = BASE_URL + fund_id
-        res = requests.get(url, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
+        payload = {"idx": fund_id}
 
-        title = soup.find("title").text.strip()
+        res = requests.post(API_URL, json=payload, timeout=10)
+        data = res.json()
 
-        # ניסיון למצוא שינוי יומי
-        change = "לא נמצא"
-        for span in soup.find_all("span"):
-            if "%" in span.text:
-                change = span.text.strip()
-                break
-
-        # כתבות (כותרות בלבד בשלב ראשון)
-        articles = []
-        for a in soup.find_all("a"):
-            if "article" in a.get("href", ""):
-                articles.append(a.text.strip())
-
-        articles = list(set(articles))[:3]
+        # לפעמים הנתונים בתוך data["d"]
+        raw = data.get("d", data)
 
         return {
-            "title": title,
-            "change": change,
-            "articles": articles
+            "change": str(raw)[:20],  # זמני – נראה מה חוזר
+            "price": "נבדוק בהמשך",
         }
 
     except Exception as e:
         return {
-            "title": fund_id,
             "change": "שגיאה",
-            "articles": []
+            "price": "-"
         }
 
 def detect_anomaly(change_text):
@@ -71,17 +52,9 @@ def build_report(funds):
 
         anomaly = "כן 🚨" if detect_anomaly(data["change"]) else "לא"
 
-        lines.append(f"{data['title']}")
+        lines.append(f"{fund_id}")
         lines.append(f"שינוי יומי: {data['change']}")
         lines.append(f"חריג: {anomaly}")
-
-        if data["articles"]:
-            lines.append("סיכום כתבות:")
-            for art in data["articles"]:
-                lines.append(f"- {art[:80]}")
-        else:
-            lines.append("סיכום כתבות: אין עדכונים")
-
         lines.append("")
 
     return "\n".join(lines)

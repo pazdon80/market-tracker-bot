@@ -2,6 +2,7 @@ import json
 import os
 import requests
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -22,7 +23,8 @@ def send_telegram_message(text: str) -> None:
     response.raise_for_status()
 
 def build_report() -> str:
-    today = datetime.now().strftime("%d/%m/%Y %H:%M")
+    now_il = datetime.now(ZoneInfo("Asia/Jerusalem"))
+    today = now_il.strftime("%d/%m/%Y %H:%M")
 
     lines = [
         f"סיכום יומי - {today}",

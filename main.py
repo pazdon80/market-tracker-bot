@@ -18,15 +18,22 @@ def fetch_fund_data(fund_id):
     try:
         payload = {"idx": fund_id}
 
-        res = requests.post(API_URL, json=payload, timeout=10)
-        data = res.json()
+        res = requests.post(API_URL, data=payload, timeout=10)
+        text = res.text.strip()
 
-        # לפעמים הנתונים בתוך data["d"]
-        raw = data.get("d", data)
+        # ניקוי JSONP
+        if text.startswith("("):
+            text = text[1:-1]
 
         return {
-            "change": str(raw)[:20],  # זמני – נראה מה חוזר
-            "price": "נבדוק בהמשך",
+            "change": text[:50],  # רק כדי לראות מה חוזר
+            "price": "-"
+        }
+
+    except Exception as e:
+        return {
+            "change": f"שגיאה: {str(e)[:20]}",
+            "price": "-"
         }
 
     except Exception as e:

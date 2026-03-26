@@ -1,46 +1,82 @@
+import json
+import os
 import requests
-from urllib.parse import urlencode
+import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-CANDIDATE_URLS = [
-    "https://www.funder.co.il/wsStock.asmx/GetindicesOn",
-    "https://www.funder.co.il/funder/wsStock.asmx/GetindicesOn",
-    "https://cdn.funder.co.il/funder/wsStock.asmx/GetindicesOn",
-]
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def test_url(fund_id: str) -> None:
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Referer": f"https://www.funder.co.il/fund/{fund_id}",
-    }
+API_URL = "https://cdn.funder.co.il/funder/wsStock.asmx/GetindicesOn"
 
-    params_options = [
-        {"idx": fund_id},
-        {"idx": fund_id, "callback": "jQuery123"},
-        {"idx": fund_id, "jsoncallback": "jQuery123"},
-    ]
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
 
-    for url in CANDIDATE_URLS:
-        for params in params_options:
-            try:
-                response = requests.get(
-                    url,
-                    params=params,
-                    headers=headers,
-                    timeout=20,
-                )
+def send_telegram_message(text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text})
 
-                body_preview = response.text[:500].replace("\n", " ").replace("\r", " ")
+def get_chart_api_id(fund_id):
+    try:
+        url = f"https://www.funder.co.il/fund/{fund_id}"
+        res = requests.get(url, headers=HEADERS, timeout=10)
+        
+        # מחפש chartApiId
+        match = re.search(r'chartApiId["\']?\s*value=["\'](\d+)', res.text)
+        
+        if match:
+            return match.group(1)
 
-                print("\n" + "=" * 90)
-                print("URL:", response.url)
-                print("STATUS:", response.status_code)
-                print("CONTENT-TYPE:", response.headers.get("Content-Type"))
-                print("BODY:", body_preview)
+        # fallback
+        match2 = re.search(r'chartApiId.*?(\d+)', res.text)
+        if match2:
+            return match2.group(1)
 
-            except Exception as e:
-                print("\n" + "=" * 90)
-                print("URL:", url, params)
-                print("ERROR:", e)
+        return None
+
+    except:
+        return None
+
+def fetch_fund_data(chart_id):
+    try:
+        params = {"idx": chart_id}
+
+        res = requests.get(API_URL, params=params, headers=HEADERS, timeout=10)
+        data = res.json()
+
+        return str(data)[:80]
+
+    except Exception as e:
+        return f"שגיאה: {str(e)[:30]}"
+
+def build_report(funds):
+    now_il = datetime.now(ZoneInfo("Asia/Jerusalem")).strftime("%d/%m/%Y %H:%M")
+
+    lines = [f"סיכום יומי - {now_il}", ""]
+
+    for fund_id in funds:
+        chart_id = get_chart_api_id(fund_id)
+
+        if not chart_id:
+            lines.append(f"{fund_id}")
+            lines.append("לא נמצא chartApiId")
+            lines.append("")
+            continue
+
+        data = fetch_fund_data(chart_id)
+
+        lines.append(f"{fund_id}")
+        lines.append(f"chartApiId: {chart_id}")
+        lines.append(f"DATA: {data}")
+        lines.append("")
+
+    return "\n".join(lines)
 
 if __name__ == "__main__":
-    test_url("5139332")
+    with open("stocks.json", "r") as f:
+        funds = json.load(f)
+
+    report = build_report(funds)
+    send_telegram_message(report)
